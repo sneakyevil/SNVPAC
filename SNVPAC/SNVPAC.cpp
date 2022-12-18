@@ -19,6 +19,7 @@ static int m_gNvHandle = -1;
 struct AppConfiguration_t
 {
     std::string m_Name;
+    uint32_t m_Hash = 0;
     
     int m_Vibrance = 0;
 };
@@ -32,93 +33,6 @@ namespace Utils
         std::transform(m_Left.begin(), m_Left.end(), m_Left.begin(), tolower);
         std::transform(m_Right.begin(), m_Right.end(), m_Right.begin(), tolower);
         return m_Right > m_Left;
-    }
-
-    void AddConfiguration(AppConfiguration_t& m_AppConfig)
-    {
-        m_gAppConfigs.emplace_back(m_AppConfig);
-        std::sort(m_gAppConfigs.begin(), m_gAppConfigs.end(), [](const AppConfiguration_t& m_Left, const AppConfiguration_t& m_Right) -> bool { return Sort_Alphabet(m_Left.m_Name, m_Right.m_Name); });
-    }
-
-    void SetConfiguration(AppConfiguration_t* m_AppConfig)
-    {
-        static AppConfiguration_t m_LastSettings;
-        if (m_LastSettings.m_Vibrance != m_AppConfig->m_Vibrance)
-        {
-            m_LastSettings.m_Vibrance = m_AppConfig->m_Vibrance;
-            m_gNvAPI.SetDVCLevel(m_gNvHandle, 0, static_cast<int>(m_AppConfig->m_Vibrance * 1.26));
-        }
-    }
-
-    const char* m_ConfigurationFile = "config.dat";
-    void SaveConfiguration()
-    {
-        FILE* m_File;
-        fopen_s(&m_File, m_ConfigurationFile, "w");
-        if (m_File)
-        {
-            for (AppConfiguration_t& m_AppConfig : m_gAppConfigs)
-            {
-                fwrite(&m_AppConfig.m_Name[0], sizeof(char), m_AppConfig.m_Name.size() + 1, m_File);
-                fwrite(&m_AppConfig.m_Vibrance, sizeof(int), 1, m_File);
-            }
-
-            fclose(m_File);
-        }
-    }
-
-    void LoadConfiguration()
-    {
-        FILE* m_File;
-        fopen_s(&m_File, m_ConfigurationFile, "r");
-        if (m_File)
-        {
-            fseek(m_File, 0, SEEK_END);
-            long m_FileSize     = ftell(m_File);
-            uint8_t* m_RawFile  = new uint8_t[m_FileSize];
-
-            fseek(m_File, 0, SEEK_SET);
-            fread(m_RawFile, sizeof(uint8_t), m_FileSize, m_File);
-
-            fclose(m_File);
-
-            int m_Offset = 0;
-            while (1)
-            {
-                if (m_Offset >= m_FileSize) break;
-
-                AppConfiguration_t m_AppConfig;
-                m_AppConfig.m_Name = reinterpret_cast<const char*>(&m_RawFile[m_Offset]);
-
-                m_Offset += (m_AppConfig.m_Name.size() + 1);
-
-                memcpy(&m_AppConfig.m_Vibrance, &m_RawFile[m_Offset], sizeof(int));
-
-                m_Offset += sizeof(int);
-
-                AddConfiguration(m_AppConfig);
-            }
-
-            delete m_RawFile;
-        }
-    }
-
-    std::vector<std::string> GetConfigurationFormatted()
-    {
-        std::vector<std::string> m_List;
-
-        int m_iCount = 1;
-        for (AppConfiguration_t& m_AppConfig : m_gAppConfigs)
-        {
-            std::string m_App = std::to_string(m_iCount) + ". ";
-            m_App += m_AppConfig.m_Name + " ";
-            m_App += "[V: " + std::to_string(m_AppConfig.m_Vibrance) + "]";
-
-            m_List.emplace_back(m_App);
-            ++m_iCount;
-        }
-
-        return m_List;
     }
 
     std::string GetProcessByID(DWORD m_ProcessID)
@@ -180,6 +94,115 @@ namespace Utils
             }
 
             CloseHandle(m_Snapshot);
+        }
+
+        return m_List;
+    }
+
+    uint32_t JOAAT(const char* m_String) 
+    {
+        uint32_t m_Hash = 0;
+
+        while (*m_String)
+        {
+            m_Hash += *m_String;
+            m_Hash += (m_Hash << 10);
+            m_Hash ^= (m_Hash >> 6);
+            ++m_String;
+        }
+
+        m_Hash += (m_Hash << 3);
+        m_Hash ^= (m_Hash >> 11);
+        m_Hash += (m_Hash << 15);
+        return m_Hash;
+    }
+}
+
+namespace Configuration
+{
+    void Add(AppConfiguration_t& m_AppConfig)
+    {
+        m_gAppConfigs.emplace_back(m_AppConfig);
+        std::sort(m_gAppConfigs.begin(), m_gAppConfigs.end(), [](const AppConfiguration_t& m_Left, const AppConfiguration_t& m_Right) -> bool { return Utils::Sort_Alphabet(m_Left.m_Name, m_Right.m_Name); });
+    }
+
+    void Set(AppConfiguration_t* m_AppConfig)
+    {
+        static AppConfiguration_t m_LastConfig;
+        if (m_LastConfig.m_Vibrance != m_AppConfig->m_Vibrance)
+        {
+            m_LastConfig.m_Vibrance = m_AppConfig->m_Vibrance;
+            m_gNvAPI.SetDVCLevel(m_gNvHandle, 0, static_cast<int>(m_AppConfig->m_Vibrance * 1.26));
+        }
+    }
+
+    const char* m_FileName = "config.dat";
+    void SaveFile()
+    {
+        FILE* m_File;
+        fopen_s(&m_File, m_FileName, "w");
+        if (m_File)
+        {
+            for (AppConfiguration_t& m_AppConfig : m_gAppConfigs)
+            {
+                fwrite(&m_AppConfig.m_Name[0], sizeof(char), m_AppConfig.m_Name.size() + 1, m_File);
+                fwrite(&m_AppConfig.m_Vibrance, sizeof(int), 1, m_File);
+            }
+
+            fclose(m_File);
+        }
+    }
+
+    void LoadFile()
+    {
+        FILE* m_File;
+        fopen_s(&m_File, m_FileName, "r");
+        if (m_File)
+        {
+            fseek(m_File, 0, SEEK_END);
+            long m_FileSize = ftell(m_File);
+            uint8_t* m_RawFile = new uint8_t[m_FileSize];
+
+            fseek(m_File, 0, SEEK_SET);
+            fread(m_RawFile, sizeof(uint8_t), m_FileSize, m_File);
+
+            fclose(m_File);
+
+            int m_Offset = 0;
+            while (1)
+            {
+                if (m_Offset >= m_FileSize) break;
+
+                AppConfiguration_t m_AppConfig;
+                m_AppConfig.m_Name = reinterpret_cast<const char*>(&m_RawFile[m_Offset]);
+                m_AppConfig.m_Hash = Utils::JOAAT(&m_AppConfig.m_Name[0]);
+
+                m_Offset += (m_AppConfig.m_Name.size() + 1);
+
+                memcpy(&m_AppConfig.m_Vibrance, &m_RawFile[m_Offset], sizeof(int));
+
+                m_Offset += sizeof(int);
+
+                Add(m_AppConfig);
+            }
+
+            delete m_RawFile;
+        }
+    }
+
+    std::vector<std::string> GetFormatted()
+    {
+        std::vector<std::string> m_List;
+
+        int m_iCount = 1;
+        for (AppConfiguration_t& m_AppConfig : m_gAppConfigs)
+        {
+            std::string m_App = std::to_string(m_iCount) + ". ";
+            m_App += m_AppConfig.m_Name + " ";
+            m_App += "[V: " + std::to_string(m_AppConfig.m_Vibrance) + "]";
+
+            m_List.emplace_back(m_App);
+            ++m_iCount;
         }
 
         return m_List;
@@ -351,17 +374,18 @@ namespace MessageHandler
         GetWindowThreadProcessId(m_Window, &m_ProcessID);
 
         std::string m_ProcessName = Utils::GetProcessByID(m_ProcessID);
+        uint32_t m_ProcessHash = Utils::JOAAT(&m_ProcessName[0]);
 
         for (AppConfiguration_t& m_AppConfig : m_gAppConfigs)
         {
             if (m_AppConfig.m_Name.size() != m_ProcessName.size()) continue;
-            if (m_AppConfig.m_Name != m_ProcessName) continue;
+            if (m_AppConfig.m_Hash != m_ProcessHash) continue;
 
-            Utils::SetConfiguration(&m_AppConfig);
+            Configuration::Set(&m_AppConfig);
             return;
         }
 
-        Utils::SetConfiguration(&m_gAppConfigDefault);
+        Configuration::Set(&m_gAppConfigDefault);
     }
 
     DWORD __stdcall Thread(void* m_Reserved)
@@ -426,7 +450,7 @@ int main()
     Program::SetAffinity();
     CreateThread(0, 0, MessageHandler::Thread, 0, 0, 0);
 
-    Utils::LoadConfiguration();
+    Configuration::LoadFile();
 
     while (1)
     {
@@ -444,13 +468,14 @@ int main()
 
                 AppConfiguration_t m_AppConfig;
                 m_AppConfig.m_Name = m_Processes[m_ProcessIndex];
+                m_AppConfig.m_Hash = Utils::JOAAT(&m_AppConfig.m_Name[0]);
                 m_AppConfig.m_Vibrance = Program::GetVibranceValue(5);
 
                 if (m_AppConfig.m_Vibrance == -1)
                     break;
 
-                Utils::AddConfiguration(m_AppConfig);
-                Utils::SaveConfiguration();
+                Configuration::Add(m_AppConfig);
+                Configuration::SaveFile();
             }
             break;
             case 1:
@@ -461,7 +486,7 @@ int main()
                     break;
                 }
 
-                std::vector<std::string> m_AppConfigs = Utils::GetConfigurationFormatted();
+                std::vector<std::string> m_AppConfigs = Configuration::GetFormatted();
                 int m_AppIndex = Program::Listbox("Select Application:\n", &m_AppConfigs, 5, "\t");
                 if (m_AppIndex == -1)
                     break;
@@ -473,7 +498,7 @@ int main()
                         m_gAppConfigs.erase(m_gAppConfigs.begin() + m_AppIndex);
                     else
                         m_gAppConfigs[m_AppIndex].m_Vibrance = m_NewVibrance;
-                    Utils::SaveConfiguration();
+                    Configuration::SaveFile();
                 }
             }
             break;
