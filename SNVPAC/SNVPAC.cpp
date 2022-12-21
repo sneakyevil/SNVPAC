@@ -137,10 +137,20 @@ namespace Configuration
     }
 
     const char* m_FileName = "config.dat";
+    std::string GetFilePath()
+    {
+        std::string m_Path(MAX_PATH, '\0');
+        m_Path.resize(GetModuleFileNameA(0, &m_Path[0], m_Path.size()));
+
+        size_t m_Index = m_Path.find_last_of("\\/");
+        m_Path.erase(m_Index, m_Path.size() - m_Index);
+        return (m_Path + "\\" + m_FileName);
+    }
+
     void SaveFile()
     {
         FILE* m_File;
-        fopen_s(&m_File, m_FileName, "w");
+        fopen_s(&m_File, GetFilePath().c_str(), "w");
         if (m_File)
         {
             for (AppConfiguration_t& m_AppConfig : m_gAppConfigs)
@@ -156,7 +166,7 @@ namespace Configuration
     void LoadFile()
     {
         FILE* m_File;
-        fopen_s(&m_File, m_FileName, "r");
+        fopen_s(&m_File, GetFilePath().c_str(), "r");
         if (m_File)
         {
             fseek(m_File, 0, SEEK_END);
